@@ -27,16 +27,6 @@ resource "google_storage_bucket_access_control" "public_rule" {
   entity = "allUsers"
 }
 
-
-resource "google_storage_bucket_object" "picture" {
-  name ="bm.jpg"
-  source = "bm.jpg"
-    bucket =  google_storage_bucket.GBB.name
-    content_type = "jpg"
-}
-
-
-
 resource "google_storage_bucket_object" "index" {
 name = "index.html"  
 source = "index.html"
