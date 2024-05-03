@@ -1,0 +1,59 @@
+#Custom VPC, create own subnets
+resource "google_compute_network" "vpc_network" {
+  name                    = "custom-vpc"
+  auto_create_subnetworks = "false"
+}
+#Create subnet to house VM
+resource "google_compute_subnetwork" "public_subnet" {
+  name          = "public-subnet"
+  ip_cidr_range = "10.187.72.0/24"
+  region        = "asia-east1"
+  network       = google_compute_network.vpc_network.self_link
+}
+#Define FireWall Rules
+resource "google_compute_firewall" "http_firewall" {
+  name    = "allow-http"
+  network = google_compute_network.vpc_network.self_link
+#allow HTTP on Port 80
+  allow {
+    protocol = "tcp"
+    ports    = ["80"]
+  }
+  #allow from all ranges
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["http-server"]
+}
+#This is a command I need to study Note placement
+resource "google_compute_address" "public_ip" {
+  name = "public-ip"
+}
+
+#Create Instance 
+resource "google_compute_instance" "default" {
+  name         = "dustybuckets"
+  machine_type = "e2-medium"
+  zone         = "asia-east1-a"
+  tags = ["http-server"]
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-10"
+    }
+  }
+  #The second command that costed me hours of frustration
+  network_interface {
+    subnetwork = google_compute_subnetwork.public_subnet.self_link
+    access_config {
+      // Ephemeral IP
+      nat_ip = google_compute_address.public_ip.address
+    }
+  }
+  #Display metadata from Remo
+ metadata = {
+    startup-script = "#!/bin/bash\n# Update and install Apache2\napt update\napt install -y apache2\n\n# Start and enable Apache2\nsystemctl start apache2\nsystemctl enable apache2\n\n# GCP Metadata server base URL and header\nMETADATA_URL=\"http://metadata.google.internal/computeMetadata/v1\"\nMETADATA_FLAVOR_HEADER=\"Metadata-Flavor: Google\"\n\n# Use curl to fetch instance metadata\nlocal_ipv4=$(curl -H \"$${METADATA_FLAVOR_HEADER}\" -s \"$${METADATA_URL}/instance/network-interfaces/0/ip\")\npublic_ipv4=$(curl -H \"$${METADATA_FLAVOR_HEADER}\" -s \"$${METADATA_URL}/instance/network-interfaces/0/access-configs/0/external-ip\")\nzone=$(curl -H \"$${METADATA_FLAVOR_HEADER}\" -s \"$${METADATA_URL}/instance/zone\")\nproject_id=$(curl -H \"$${METADATA_FLAVOR_HEADER}\" -s \"$${METADATA_URL}/project/project-id\")\nnetwork_tags=$(curl -H \"$${METADATA_FLAVOR_HEADER}\" -s \"$${METADATA_URL}/instance/tags\")\n\n# Create a simple HTML page and include instance details\ncat <<EOF > /var/www/html/index.html\n<html><body>\n<h2>E Plubus Dustus.</h2>\n<h3>Out of many, Dust</h3>\n<iframe src=\"https://giphy.com/embed/hlPnhdnBfgjzG\" width=\"480\" height=\"360\" frameBorder=\"0\" class=\"giphy-embed\" allowFullScreen></iframe><p><a href=\"https://giphy.com/gifs/wash-hlPnhdnBfgjzG\">via GIPHY</a></p>\n<p><b>Instance Name:</b> $(hostname -f)</p>\n<p><b>Instance Private IP Address: </b> $local_ipv4</p>\n<p><b>Instance Public IP Address: </b> $public_ipv4</p>\n<b>Zone: </b> $zone</p>\n<p><b>Project ID:</b> $project_id</p>\n<p><b>Network Tags:</b> $network_tags</p>\n</body></html>\nEOF"
+  }  
+}
+#Display public ip as output
+output "instance_public_ip" {
+  value = google_compute_instance.default.network_interface[0].access_config[0].nat_ip
+}
