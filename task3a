@@ -1,0 +1,212 @@
+#A) You must choose a region in Europe to host it's prototype gaming information.  
+#This page must only be on a RFC 1918 Private 10 net and can't be accessible from the Internet.
+
+#***Create Europe Host RFC 1918 Private 10 net
+resource "google_compute_network" "gaming-vpc-eu" {
+name                    = "gaming-vpc-eu"
+auto_create_subnetworks = "false"
+}
+resource "google_compute_subnetwork" "gaming_subnet_eu" {
+name          = "gaming-subnet-eu"
+ip_cidr_range = "10.187.67.0/24"
+region        = "europe-west4"
+network       = google_compute_network.gaming-vpc-eu.self_link
+}
+
+#B) The Americas must have 2 regions and both must be RFC 1918 172.16 based subnets.  
+#They can peer with HQ in order to view the homepage however, they can only view the page on port 80(HTTP).
+
+#***Create Americas Host RFC 1918 172.16 based subnets, Americas must have 2 regions***
+resource "google_compute_network" "gaming-vpc-us" {
+name                    = "gaming-vpc-us"
+auto_create_subnetworks = "false"
+}
+
+
+resource "google_compute_subnetwork" "gaming_subnet1_us" {
+name          = "gaming-subnet1-us"
+ip_cidr_range = "172.16.68.0/24"
+region        = "us-central1"
+network       = google_compute_network.gaming-vpc-us.self_link
+}
+resource "google_compute_subnetwork" "gaming_subnet2_us" {
+name          = "gaming-subnet2-us"
+ip_cidr_range = "172.16.69.0/24"
+region        = "us-east1"
+network       = google_compute_network.gaming-vpc-us.self_link
+}
+#C) Asia Pacific region must be choosen and it must be a RFC 1918 192.168 based subnet.  
+#This subnet can only VPN into HQ.  Additionally, only port 3389(Remote Desk Top) is open to Asia. No 80, no 22.
+#***Create Asia Pacific Host RFC 1918 192.168 based subnet***
+resource "google_compute_network" "gaming-vpc-asia" {
+name                    = "gaming-vpc-asia"
+auto_create_subnetworks = "false"
+}
+resource "google_compute_subnetwork" "gaming_subnet_asia" {
+name          = "gaming-subnet-asia"
+ip_cidr_range = "192.168.70.0/24"
+region        = "asia-northeast1"
+network       = google_compute_network.gaming-vpc-asia.self_link
+}
+
+#***CREATE FIREWALL RULES****
+#Firewall Rules for EU Gaming
+#resource "google_compute_firewall" "icmp_firewall" {
+#name    = "allow-icmp"
+#network = google_compute_network.gaming-vpc-eu.self_link
+#}
+
+#allow {
+# protocol = "icmp"
+#}
+#source_ranges = ["0.0.0.0/0"]
+#target_tags   = ["gaming-hq"]
+#}
+#resource "google_compute_firewall" "rdp_firewall" {
+#name    = "allow-rdp"
+#network = google_compute_network.gaming-vpc-asia.self_link
+
+
+#allow {
+# protocol = "tcp"
+# ports = ["3389"]
+# }
+#source_ranges = ["0.0.0.0/0"]
+#target_tags   = ["gaming-asia-agent"]
+#}
+
+resource "google_compute_firewall" "http_firewall" {
+ name    = "allow-http"
+ network = google_compute_network.gaming-vpc-eu.self_link
+
+
+ allow {
+   protocol = "tcp"
+   ports    = ["80"]
+ }
+
+
+ source_tags   = ["gaming-us"]
+ target_tags   = ["gaming-eu"]
+}
+
+#create static IP addresses
+resource "google_compute_address" "vm_eu_ip" {
+ name   = "vm-eu-ip"
+ region = "europe-west4"
+}
+resource "google_compute_address" "vm_asia_ip" {
+ name   = "vm-asia-ip"
+ region = "asia-east1"
+}
+resource "google_compute_address" "vm_us_ip" {
+ name   = "vm-us-ip"
+ region = "us-central1"
+}
+resource "google_compute_address" "vm_us2_ip" {
+ name   = "vm-us2-ip"
+ region = "us-east1"
+}
+#EU Central Gaaming Machine Setup
+
+resource "google_compute_instance" "vm-eu" {
+name         = "gaming-instance-eu"
+machine_type = "e2-medium"
+zone         = "europe-west4-a"
+tags = ["gaming-hq"]
+
+boot_disk {
+ initialize_params {
+   image = "debian-cloud/debian-10"
+ }
+}
+network_interface {
+ subnetwork = google_compute_subnetwork.gaming_subnet_eu.self_link
+
+
+ access_config {
+     nat_ip = google_compute_address.vm_eu_ip.address
+   }
+
+
+ }
+ metadata = {
+   startup-script = "#!/bin/bash\n# Update and install Apache2\napt update\napt install -y apache2\n\n# Start and enable Apache2\nsystemctl start apache2\nsystemctl enable apache2\n\n# Create a simple HTML page\ncat <<EOF > /var/www/html/index.html\n<html><body>\n<h2>Greetings!</h2>\n<h3>Welcome to GCP Boyz EURO HQ.</h3>\n<iframe src=\"https://giphy.com/embed/WTvJWdDCrbYAJh4ZW5\" width=\"480\" height=\"270\" frameBorder=\"0\" class=\"giphy-embed\" allowFullScreen></iframe><p><a href=\"https://giphy.com/gifs/europeancommission-WTvJWdDCrbYAJh4ZW5\">via GIPHY</a></p>\n</body></html>\nEOF"
+ }
+}
+#Create US Game Machine 1 and 2
+resource "google_compute_instance" "vm-us" {
+name         = "gaming-instance-us"
+machine_type = "e2-medium"
+zone         = "us-central1-a"
+tags = ["gaming-us-agent"]
+boot_disk {
+ initialize_params {
+   image = "debian-cloud/debian-10"
+ }
+}
+network_interface {
+ subnetwork = google_compute_subnetwork.gaming_subnet1_us.self_link
+  access_config {
+     nat_ip = google_compute_address.vm_us_ip.address
+   }
+}
+}
+
+resource "google_compute_instance" "vm-us2" {
+name         = "gaming-instance-us2"
+machine_type = "e2-medium"
+zone         = "us-east1-b"
+tags = ["gaming-us-agent"]
+boot_disk {
+ initialize_params {
+   image = "debian-cloud/debian-10"
+ }
+}
+network_interface {
+ subnetwork = google_compute_subnetwork.gaming_subnet2_us.self_link
+  access_config {
+     nat_ip = google_compute_address.vm_us2_ip.address
+   }
+ }
+}
+
+#Network Peering between EU and US
+resource "google_compute_network_peering" "peering1-eu" {
+ name         = "peering1-eu"
+ network      = google_compute_network.gaming-vpc-eu.self_link
+ peer_network = google_compute_network.gaming-vpc-us.self_link
+}
+
+
+resource "google_compute_network_peering" "peering2-us" {
+ name         = "peering2-us"
+ network      = google_compute_network.gaming-vpc-us.self_link
+ peer_network = google_compute_network.gaming-vpc-eu.self_link
+}
+
+#Create Asia Game Machine
+#resource "google_compute_instance" "vm-asia" {
+#name         = "gaming-instance-asia"
+#machine_type = "e2-medium"
+#zone         = "asia-northeast1-b"
+#tags = ["gaming-asia-agent"]
+#boot_disk {
+# initialize_params {
+#   image = "windows-server-2019-dc-core-v20210914"
+# }
+#}
+#network_interface {
+# subnetwork = google_compute_subnetwork.gaming_subnet_asia.self_link
+#  access_config {
+#     nat_ip = google_compute_address.vm_asia_ip.address
+#   }
+#}
+# metadata = {
+#   windows-startup-script-ps1 = <<-EOF
+#   $password = ConvertTo-SecureString 'password' -AsPlainText -Force
+#   $user = New-LocalUser -Name 'remote_user' -Password $password -FullName 'Remote User' -Description 'Remote User for VM in Asia'
+#   Add-LocalGroupMember -Group 'Administrators' -Member $user.Name
+#   EOF
+# }
+#}
